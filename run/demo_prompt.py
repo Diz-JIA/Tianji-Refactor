@@ -45,15 +45,14 @@ def get_system_prompt_by_name(name):
 
 def change_example(name, cls_choose_value, chatbot):
     now_example = []
-    if chatbot is not None:
-        print("切换场景清理bot历史")
-        chatbot.clear()
+    # 直接将 chatbot 设置为 None 或空列表来触发清除
+    chatbot = []
     for i in cls_choose_value:
         if i["name"] == name:
             now_example = [[j["input"], j["output"]] for j in i["example"]]
-    if now_example is []:
+    if not now_example:
         raise gr.Error("获取example出错！")
-    return gr.update(samples=now_example), chat_history
+    return gr.update(samples=now_example), [] # 返回空历史
 
 
 def random_button_click(chatbot):
@@ -115,12 +114,25 @@ def combine_message_and_history(message, chat_history):
 
 
 def respond(system_prompt, message, chat_history):
+    # 兼容性处理：如果此时 chat_history 是 None，初始化为空列表
+    if chat_history is None:
+        chat_history = []
+
     if len(chat_history) > 11:
-        chat_history.clear()  # 清空聊天历史
-        chat_history.append(["请注意", "对话超过 已重新开始"])
-    # 合并消息和聊天历史
-    message1 = combine_message_and_history(message, chat_history)
-    print(message1)
+        chat_history.clear()
+        # 注意：这里也需要改为字典格式
+        chat_history.append({"role": "assistant", "content": "对话超过限制，已重新开始"})
+
+    # 由于最新版 chat_history 是字典列表，我们需要修改 combine 函数的逻辑或在这里手动提取
+    # 为了最小化改动，我们直接在这里处理发送给 API 的消息
+    history_for_api = []
+    for msg in chat_history:
+        # 从字典中提取文本用于 API 拼接（如果需要的话）
+        role = "User" if msg["role"] == "user" else "Bot"
+        history_for_api.append((role, msg["content"]))
+
+    message1 = combine_message_and_history(message, history_for_api)
+
     client = ZhipuAI(api_key=API_KEY)
     response = client.chat.completions.create(
         model="glm-4-flash",
@@ -130,35 +142,32 @@ def respond(system_prompt, message, chat_history):
         ],
     )
 
-    # 提取模型生成的回复内容
     bot_message_text = response.choices[0].message.content
-    # 更新聊天历史
-    chat_history.append([message, bot_message_text])  # 用户的消息
+
+    # 核心修改：将消息以字典格式追加到聊天历史中
+    chat_history.append({"role": "user", "content": message})
+    chat_history.append({"role": "assistant", "content": bot_message_text})
 
     return "", chat_history
 
 
 def clear_history(chat_history):
-    chat_history.clear()
-    return chat_history
+    return [] # 直接返回空列表清空
 
 
 def regenerate(chat_history, system_prompt):
-    if chat_history:
-        # 提取上一条输入消息
-        last_message = chat_history[-1][0]
-        # 移除最后一条记录
-        chat_history.pop()
-        # 使用上一条输入消息调用 respond 函数以生成新的回复
-        msg, chat_history = respond(system_prompt, last_message, chat_history)
-    # 返回更新后的聊天记录
-    return msg, chat_history
+    if chat_history and len(chat_history) >= 2:
+        # 字典格式下，最后一条是助手，倒数第二条是用户
+        last_user_message = chat_history[-2]["content"]
+        # 移除最后两条（旧的用户输入和旧的助手回复）
+        chat_history = chat_history[:-2]
+        return respond(system_prompt, last_user_message, chat_history)
+    return "", chat_history
 
 
 TITLE = """
-# Tianji 人情世故大模型系统——prompt版 欢迎star！\n
-## 💫开源项目地址：https://github.com/SocialAI-tianji/Tianji
-### 我们的愿景是构建一个从数据收集开始的大模型全栈垂直领域开源实践。\n
+# Tianji 人情世故大模型系统——prompt版\n
+## 💫基于开源项目https://github.com/SocialAI-tianji/Tianji
 ## 我们支持不同模型进行对话，你可以选择你喜欢的模型进行对话。
 ## 使用方法：选择或随机一个场景，输入提示词（或者点击上面的Example自动填充），随后发送！
 """
@@ -192,7 +201,9 @@ with gr.Blocks() as demo:
             )
         with gr.Column(scale=4):
             chatbot = gr.Chatbot(
-                label="聊天界面", value=[["如果喜欢，请给我们一个⭐，谢谢", "不知道选哪个？试试点击随机按钮把！"]]
+                label="聊天界面",
+                # 核心修改：将原来的 [["user", "assistant"]] 改为 {"role": ..., "content": ...}
+                value=[]
             )
             msg = gr.Textbox(label="输入信息")
             msg.submit(
@@ -231,4 +242,9 @@ with gr.Blocks() as demo:
 if __name__ == "__main__":
     server_name = '0.0.0.0' if args.listen else None
     server_port = args.port
-    demo.launch(server_name=server_name, server_port=server_port, root_path=args.root_path)
+    demo.launch(
+        server_name="127.0.0.1",
+        server_port=7860,
+        share=True,  # 暂时关闭 share，避免 frpc 和连接超时报错
+        show_error = True
+    )

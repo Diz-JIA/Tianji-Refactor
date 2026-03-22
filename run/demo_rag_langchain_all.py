@@ -15,6 +15,9 @@ import requests
 import loguru
 load_dotenv()
 
+os.environ["ANONYMIZED_TELEMETRY"] = "False"  # 屏蔽 Chroma 遥测报错
+os.environ["LANGCHAIN_TRACING_V2"] = "false"  # 屏蔽 LangSmith 警告
+
 parser = argparse.ArgumentParser(description='Launch Gradio application')
 parser.add_argument('--listen', action='store_true', help='Specify to listen on 0.0.0.0')
 parser.add_argument('--port', type=int, default=None, help='The port the server should listen on')
@@ -137,13 +140,20 @@ def handle_question(chain, question: str, chat_history):
     if not question:
         return "", chat_history
     try:
+        # 调用 RAG 链获取结果
         result = chain.invoke(question)
-        chat_history.append((question, result))
+
+        # 【核心修改】将旧的元组格式 (question, result)
+        # 改为符合新版 Gradio 要求的字典格式
+        chat_history.append({"role": "user", "content": question})
+        chat_history.append({"role": "assistant", "content": result})
+
         return "", chat_history
     except Exception as e:
         loguru.logger.error("处理问题时发生错误: {}", str(e))
-        return str(e), chat_history
-
+        # 报错时也将错误信息存入，防止界面卡死
+        chat_history.append({"role": "assistant", "content": f"出错了: {str(e)}"})
+        return "", chat_history
 
 # Define scenarios
 scenarios = {
@@ -169,11 +179,10 @@ for scenario_name, scenario_folder in scenarios.items():
 
 # Create Gradio interface
 TITLE = """
-# Tianji 人情世故大模型系统完整版(基于知识库实现) 欢迎star！\n
-## 💫开源项目地址：https://github.com/SocialAI-tianji/Tianji
+# Tianji 人情世故大模型系统完整版————RAG版 \n
+## 💫基于开源项目https://github.com/SocialAI-tianji/Tianji
 ## 使用方法：选择你想提问的场景，输入提示，或点击Example自动填充
 ## 如果觉得回答不满意,可补充更多信息重复提问。
-### 我们的愿景是构建一个从数据收集开始的大模型全栈垂直领域开源实践.
 """
 
 
@@ -223,7 +232,7 @@ with gr.Blocks() as demo:
     with gr.Tabs() as tabs:
         for scenario_name in scenarios.keys():
             with gr.Tab(scenario_name):
-                chatbot = gr.Chatbot(height=450, show_copy_button=True)
+                chatbot = gr.Chatbot(height=450)
                 msg = gr.Textbox(label="输入你的疑问")
 
                 examples = gr.Examples(
