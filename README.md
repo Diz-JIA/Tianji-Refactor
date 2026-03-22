@@ -1,6 +1,8 @@
 # Tianji-Refactor: 人情世故大模型轻量化重构版
 
-本项目是基于开源项目 [SocialAI-Tianji](https://github.com/SocialAI-tianji/Tianji) 的深度重构版本。针对原项目在现代开发环境（尤其是 **Apple Silicon M4 架构**）下的运行痛点，进行了架构去冗余与兼容性修复。
+本项目是基于开源项目 [Tianji](https://github.com/SocialAI-tianji/Tianji) 的深度重构版本。针对原项目在现代开发环境（尤其是 **Apple Silicon M4 架构**）下的运行痛点，进行了架构去冗余与兼容性修复。
+
+>**入门文档**：[入门点这里](https://tianji.readthedocs.io/en/latest/index.html)
 
 ## 🌟 项目亮点
 
